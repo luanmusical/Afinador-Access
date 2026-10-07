@@ -90,6 +90,7 @@ jobs:
           $cfg = Get-Content "$c\afinador_config.json" -Raw
           Write-Host "--- configuração depois: $cfg"
           Write-Host "--- diário"; Get-Content "$env:TEMP\afinador_teste_atualizacao.log" -ErrorAction SilentlyContinue
+          Write-Host "--- instalador"; Get-ChildItem $env:TEMP -Filter instalar.log -Recurse -ErrorAction SilentlyContinue | ForEach-Object { Get-Content $_.FullName }
           if (-not $ok) { throw "NÃO completou. Versão: $v; velho fechou: $($velho.HasExited)" }
           if ($cfg -notmatch '0.37' -or $cfg -notmatch '442') { throw "As configurações do usuário NÃO foram preservadas" }
           Write-Host "Configurações preservadas."
