@@ -1,0 +1,50 @@
+# Testa a atualização automática do Mac de ponta a ponta: instala uma versão velha (0.0.1) em Aplicativos,
+# abre, e confere se ela sozinha acha a Release mais nova daqui, baixa, instala e reabre já atualizada.
+name: Testar atualização automática (Mac)
+
+on:
+  workflow_dispatch:
+
+jobs:
+  testar:
+    runs-on: macos-14
+    steps:
+      - name: Código-fonte (repositório privado)
+        uses: actions/checkout@v4
+        with:
+          repository: luanmusical/Afinador-Access-src
+          ssh-key: ${{ secrets.SRC_DEPLOY_KEY }}
+          path: src
+      - name: Instalar uma versão velha (0.0.1) em Aplicativos
+        run: |
+          sh src/apple/Mac/build_mac.sh 0.0.1
+          rm -rf /Applications/Afinador-Access.app
+          ditto src/build/mac/Afinador-Access.app /Applications/Afinador-Access.app
+          /usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" /Applications/Afinador-Access.app/Contents/Info.plist
+      - name: Abrir e esperar ela se atualizar sozinha
+        run: |
+          mkdir -p prints
+          ESPERADA=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          echo "Versão publicada: $ESPERADA"
+          AFINADOR_TESTE_ATUALIZAR=sim /Applications/Afinador-Access.app/Contents/MacOS/Afinador-Access > prints/log_atualizacao.txt 2>&1 &
+          for i in $(seq 1 90); do
+            sleep 2
+            V=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" /Applications/Afinador-Access.app/Contents/Info.plist 2>/dev/null || echo "?")
+            if [ "$V" = "$ESPERADA" ] && pgrep -x Afinador-Access > /dev/null; then
+              echo "ATUALIZOU de 0.0.1 para $V e reabriu (após $((i*2)) s)"
+              sleep 6
+              screencapture -x prints/depois_da_atualizacao.png
+              cat prints/log_atualizacao.txt
+              ls /Applications | grep -i afinador
+              exit 0
+            fi
+          done
+          echo "NÃO atualizou. Versão instalada: $V"
+          cat prints/log_atualizacao.txt
+          screencapture -x prints/falhou.png
+          exit 1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prints-atualizacao
+          path: prints/
