@@ -96,7 +96,7 @@ jobs:
 
   iphone:
     name: iPhone
-    runs-on: macos-14
+    runs-on: macos-15
     steps:
       - name: Código-fonte (repositório privado)
         uses: actions/checkout@v4
