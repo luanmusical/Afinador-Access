@@ -4,6 +4,7 @@
 #
 # Rodar: aba Actions > "Compilar versões Apple" > Run workflow.
 #   - versao: número da versão (ex.: 1.0.1). É ele que os programas comparam pra saber se há atualização.
+#   - notas: o que mudou (aparece na pergunta "Nova versão disponível" dentro do programa).
 #   - publicar: marcado = cria a Release v<versao> com os pacotes (os programas já instalados passam a
 #     oferecer a atualização). Desmarcado = só compila e deixa os pacotes em "Artifacts" pra testar.
 name: Compilar versões Apple
@@ -15,6 +16,9 @@ on:
         description: "Versão (ex.: 1.0.0)"
         required: true
         default: "1.0.0"
+      notas:
+        description: "Novidades desta versão"
+        default: "Correções e melhorias."
       publicar:
         description: "Publicar como Release (dispara a atualização automática)?"
         type: boolean
@@ -40,8 +44,132 @@ jobs:
           path: src
       - name: Compilar
         run: sh src/apple/Mac/build_mac.sh "${{ inputs.versao }}"
+      - name: Teste - abrir o programa e fotografar cada guia
+        run: |
+          mkdir -p prints
+          APP="src/build/mac/Afinador-Access.app/Contents/MacOS/Afinador-Access"
+          for ABA in 0 1 2; do
+            AFINADOR_TESTE_ABA=$ABA "$APP" > "prints/mac_log_$ABA.txt" 2>&1 &
+            PID=$!
+            sleep 7
+            if ! kill -0 $PID 2>/dev/null; then echo "O programa FECHOU sozinho na guia $ABA"; cat "prints/mac_log_$ABA.txt"; exit 1; fi
+            screencapture -x "prints/mac_guia_$ABA.png"
+            kill $PID; wait $PID 2>/dev/null || true
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prints-mac
+          path: prints/
       - uses: actions/upload-artifact@v4
         with:
           name: Afinador-Access-Mac-Universal
           path: src/build/Afinador-Access-Mac-Universal.zip
           if-no-files-found: error
+
+  plugin:
+    name: Plugin VST3 + AU (Universal)
+    runs-on: macos-14
+    steps:
+      - name: Código-fonte (repositório privado)
+        uses: actions/checkout@v4
+        with:
+          repository: luanmusical/Afinador-Access-src
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SRC_DEPLOY_KEY }}
+          path: src
+      - name: Compilar
+        run: sh src/vst/build_mac.sh "${{ inputs.versao }}"
+      - name: Teste - o plugin AU passa na validação da Apple
+        run: |
+          mkdir -p ~/Library/Audio/Plug-Ins/Components
+          ditto src/vst/build/AfinadorLR_artefacts/Release/AU/AfinadorLR.component ~/Library/Audio/Plug-Ins/Components/AfinadorLR.component
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+          auval -a | grep -i afin || true
+          auval -v aufx Afin LRPd
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Afinador-Access-Plugin-Mac-Universal
+          path: src/build/Afinador-Access-Plugin-Mac-Universal.zip
+          if-no-files-found: error
+
+  iphone:
+    name: iPhone
+    runs-on: macos-14
+    steps:
+      - name: Código-fonte (repositório privado)
+        uses: actions/checkout@v4
+        with:
+          repository: luanmusical/Afinador-Access-src
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SRC_DEPLOY_KEY }}
+          path: src
+      - name: Ferramentas
+        run: brew install xcodegen
+      - name: Compilar (.ipa sem assinatura)
+        run: sh src/apple/iOS/build_ios.sh "${{ inputs.versao }}" "${{ github.run_number }}"
+      - name: Teste - abrir no simulador de iPhone e fotografar cada aba
+        run: |
+          cd src/apple/iOS
+          xcodebuild -quiet -project AfinadorAccess.xcodeproj -scheme Afinador -configuration Debug \
+            -sdk iphonesimulator -destination "generic/platform=iOS Simulator" -derivedDataPath build/sim \
+            CODE_SIGNING_ALLOWED=NO build
+          UDID=$(xcrun simctl list devices available -j | python3 -c "import json,sys; d=json.load(sys.stdin)['devices']; print(next(x['udid'] for k,v in sorted(d.items(), reverse=True) if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          echo "Simulador: $UDID"
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl install "$UDID" build/sim/Build/Products/Debug-iphonesimulator/Afinador-Access.app
+          xcrun simctl privacy "$UDID" grant microphone com.lrproductions.afinador.ios || true
+          mkdir -p "$GITHUB_WORKSPACE/prints"
+          for TEMA in dark light; do
+            xcrun simctl ui "$UDID" appearance $TEMA
+            for ABA in 0 1 2 3; do
+              SIMCTL_CHILD_AFINADOR_TESTE_ABA=$ABA xcrun simctl launch --terminate-running-process "$UDID" com.lrproductions.afinador.ios
+              sleep 6
+              xcrun simctl io "$UDID" screenshot "$GITHUB_WORKSPACE/prints/iphone_${TEMA}_aba_$ABA.png"
+            done
+          done
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prints-iphone
+          path: prints/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Afinador-Access-iPhone
+          path: src/build/Afinador-Access-iPhone.ipa
+          if-no-files-found: error
+
+  publicar:
+    name: Publicar Release
+    if: ${{ inputs.publicar }}
+    needs: [mac, plugin, iphone]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: pacotes
+          pattern: Afinador-Access-*
+          merge-multiple: true
+      - name: Criar a Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NOTAS: ${{ inputs.notas }}
+        run: |
+          cd pacotes
+          {
+            printf '%s\n' "$NOTAS"
+            echo
+            echo "### Arquivos"
+            echo "- **Afinador-Access-Mac-Universal.zip** — programa para Mac (chip Apple e Intel). Atualiza sozinho."
+            echo "- **Afinador-Access-Plugin-Mac-Universal.zip** — plugin VST3 e AU para Mac."
+            echo "- **Afinador-Access-iPhone.ipa** — app para iPhone (precisa ser assinado para instalar; veja o LEIA-ME)."
+            echo
+            echo "### SHA-256"
+            echo '```'
+            sha256sum *
+            echo '```'
+          } > ../notas.md
+          gh release create "v${{ inputs.versao }}" * -R "${{ github.repository }}" \
+            --title "Afinador-Access ${{ inputs.versao }}" --notes-file ../notas.md
