@@ -1,6 +1,6 @@
 # Testa a atualização automática do Mac de ponta a ponta: instala uma versão velha (0.0.1) em Aplicativos,
 # abre, e confere se ela sozinha acha a Release mais nova daqui, baixa, instala e reabre já atualizada.
-name: Testar atualização automática (Mac)
+name: Testar atualização automática (Mac e Windows)
 
 on:
   workflow_dispatch:
@@ -49,3 +49,47 @@ jobs:
         with:
           name: prints-atualizacao
           path: prints/
+
+  windows:
+    runs-on: windows-latest
+    steps:
+      - name: Instalar o pacote da última Release fingindo ser a versão 0.0.1
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release download -R ${{ github.repository }} -p Afinador-Access-Windows.zip -D pac
+          Expand-Archive pac\Afinador-Access-Windows.zip C:\teste
+          $c = "C:\teste\Afinador-Access\content"
+          Set-Content "$c\versao.txt" "0.0.1" -NoNewline
+          # Configuração do "usuário": tem que sobreviver à atualização.
+          Set-Content "$c\afinador_config.json" '{"vol": 0.37, "master_tuning": 442.0}'
+      - name: Abrir e esperar ele se atualizar sozinho
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          New-Item -ItemType Directory -Force prints | Out-Null
+          $c = "C:\teste\Afinador-Access\content"
+          $esperada = (gh release view -R ${{ github.repository }} --json tagName -q .tagName).TrimStart('v')
+          Write-Host "Versão publicada: $esperada"
+          $env:AFINADOR_TESTE_ATUALIZAR = "sim"
+          $velho = Start-Process -FilePath "$c\afinador.exe" -WorkingDirectory $c -PassThru
+          $ok = $false
+          for ($i = 1; $i -le 90; $i++) {
+            Start-Sleep 2
+            $v = (Get-Content "$c\versao.txt" -Raw).Trim()
+            $novo = Get-Process afinador -ErrorAction SilentlyContinue | Where-Object { $_.Id -ne $velho.Id } | Select-Object -First 1
+            if ($v -eq $esperada -and $velho.HasExited -and $novo) {
+              Write-Host "ATUALIZOU de 0.0.1 para $v`: o programa velho fechou e o novo abriu sozinho (PID $($novo.Id)), em $($i*2) s"
+              $ok = $true
+              break
+            }
+          }
+          Start-Sleep 5
+          $cfg = Get-Content "$c\afinador_config.json" -Raw
+          Write-Host "--- configuração depois: $cfg"
+          Write-Host "--- diário"; Get-Content "$env:TEMP\afinador_teste_atualizacao.log" -ErrorAction SilentlyContinue
+          if (-not $ok) { throw "NÃO completou. Versão: $v; velho fechou: $($velho.HasExited)" }
+          if ($cfg -notmatch '0.37' -or $cfg -notmatch '442') { throw "As configurações do usuário NÃO foram preservadas" }
+          Write-Host "Configurações preservadas."

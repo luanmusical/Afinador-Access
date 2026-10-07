@@ -7,7 +7,7 @@
 #   - notas: o que mudou (aparece na pergunta "Nova versão disponível" dentro do programa).
 #   - publicar: marcado = cria a Release v<versao> com os pacotes (os programas já instalados passam a
 #     oferecer a atualização). Desmarcado = só compila e deixa os pacotes em "Artifacts" pra testar.
-name: Compilar versões Apple
+name: Compilar versões Apple e Windows
 
 on:
   workflow_dispatch:
@@ -141,10 +141,56 @@ jobs:
           path: src/build/Afinador-Access-iPhone.ipa
           if-no-files-found: error
 
+  windows:
+    name: Windows (standalone)
+    runs-on: windows-latest
+    steps:
+      - name: Código-fonte (repositório privado)
+        uses: actions/checkout@v4
+        with:
+          repository: luanmusical/Afinador-Access-src
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SRC_DEPLOY_KEY }}
+          path: src
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Dependências (mesmas versões da máquina de desenvolvimento)
+        run: python -m pip install nuitka==4.2 wxPython==4.3.1 numpy==1.26.4 sounddevice==0.5.5 cytolk==0.1.13 ordered-set zstandard
+      - name: Compilar
+        working-directory: src/afinador
+        run: python build_windows.py "${{ inputs.versao }}"
+      - name: Teste - abrir o programa e fotografar
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force prints | Out-Null
+          $pasta = Resolve-Path src/afinador/build_win/afinador.dist
+          $p = Start-Process -FilePath "$pasta\afinador.exe" -WorkingDirectory $pasta -PassThru
+          Start-Sleep 12
+          if ($p.HasExited) { throw "O programa FECHOU sozinho (código $($p.ExitCode))" }
+          try {
+            Add-Type -AssemblyName System.Windows.Forms, System.Drawing
+            $b = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+            $bmp = New-Object System.Drawing.Bitmap $b.Width, $b.Height
+            [System.Drawing.Graphics]::FromImage($bmp).CopyFromScreen($b.Location, [System.Drawing.Point]::Empty, $b.Size)
+            $bmp.Save("prints\windows.png")
+          } catch { Write-Host "Sem print: $_" }
+          Stop-Process -Id $p.Id -Force
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prints-windows
+          path: prints/
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Afinador-Access-Windows
+          path: src/afinador/build_win/Afinador-Access-Windows.zip
+          if-no-files-found: error
+
   publicar:
     name: Publicar Release
     if: ${{ inputs.publicar }}
-    needs: [mac, plugin, iphone]
+    needs: [mac, plugin, iphone, windows]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -162,6 +208,7 @@ jobs:
             printf '%s\n' "$NOTAS"
             echo
             echo "### Arquivos"
+            echo "- **Afinador-Access-Windows.zip** — programa para Windows (NVDA, JAWS, Narrador). Atualiza sozinho."
             echo "- **Afinador-Access-Mac-Universal.zip** — programa para Mac (chip Apple e Intel). Atualiza sozinho."
             echo "- **Afinador-Access-Plugin-Mac-Universal.zip** — plugin VST3 e AU para Mac."
             echo "- **Afinador-Access-iPhone.ipa** — app para iPhone (precisa ser assinado para instalar; veja o LEIA-ME)."
