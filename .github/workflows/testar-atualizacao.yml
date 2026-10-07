@@ -27,20 +27,21 @@ jobs:
           ESPERADA=$(curl -s -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/${{ github.repository }}/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
           echo "Versão publicada: $ESPERADA"
           AFINADOR_TESTE_ATUALIZAR=sim /Applications/Afinador-Access.app/Contents/MacOS/Afinador-Access > prints/log_atualizacao.txt 2>&1 &
+          VELHO=$!
           for i in $(seq 1 90); do
             sleep 2
             V=$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" /Applications/Afinador-Access.app/Contents/Info.plist 2>/dev/null || echo "?")
-            if [ "$V" = "$ESPERADA" ] && pgrep -x Afinador-Access > /dev/null; then
-              echo "ATUALIZOU de 0.0.1 para $V e reabriu (após $((i*2)) s)"
+            NOVO=$(pgrep -x Afinador-Access | grep -v "^$VELHO$" | head -1)
+            if [ "$V" = "$ESPERADA" ] && ! kill -0 $VELHO 2>/dev/null && [ -n "$NOVO" ]; then
+              echo "ATUALIZOU de 0.0.1 para $V: o programa velho fechou e o novo abriu sozinho (PID $NOVO), em $((i*2)) s"
               sleep 6
               screencapture -x prints/depois_da_atualizacao.png
-              cat prints/log_atualizacao.txt
-              ls /Applications | grep -i afinador
+              echo "--- diário"; cat prints/log_atualizacao.txt
               exit 0
             fi
           done
-          echo "NÃO atualizou. Versão instalada: $V"
-          cat prints/log_atualizacao.txt
+          echo "NÃO completou. Versão instalada: $V; velho vivo: $(kill -0 $VELHO 2>/dev/null && echo sim || echo não); novo: ${NOVO:-nenhum}"
+          echo "--- diário"; cat prints/log_atualizacao.txt
           screencapture -x prints/falhou.png
           exit 1
       - uses: actions/upload-artifact@v4
