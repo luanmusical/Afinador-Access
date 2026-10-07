@@ -24,7 +24,7 @@ jobs:
       - name: Abrir e esperar ela se atualizar sozinha
         run: |
           mkdir -p prints
-          ESPERADA=$(curl -s https://api.github.com/repos/${{ github.repository }}/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
+          ESPERADA=$(curl -s -H "Authorization: Bearer ${{ github.token }}" https://api.github.com/repos/${{ github.repository }}/releases/latest | python3 -c "import json,sys; print(json.load(sys.stdin)['tag_name'].lstrip('v'))")
           echo "Versão publicada: $ESPERADA"
           AFINADOR_TESTE_ATUALIZAR=sim /Applications/Afinador-Access.app/Contents/MacOS/Afinador-Access > prints/log_atualizacao.txt 2>&1 &
           for i in $(seq 1 90); do
