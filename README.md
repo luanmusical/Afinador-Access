@@ -13,10 +13,11 @@ Baixe a versão mais recente na aba **[Releases](../../releases)**.
 
 | Sistema | Arquivo | Observação |
 |---|---|---|
+| **Windows** 10/11 (64 bits) | `Afinador-Access-Windows.zip` | NVDA, JAWS e Narrador. Atualiza sozinho. |
 | **Mac** (chip Apple e Intel) | `Afinador-Access-Mac-Universal.zip` | macOS 10.15 ou mais novo. VoiceOver. Atualiza sozinho. |
 | **Plugin VST3 / AU para Mac** | `Afinador-Access-Plugin-Mac-Universal.zip` | Para DAWs (Reaper, Logic, Live, Cubase…). |
 | **iPhone** | `Afinador-Access-iPhone.ipa` | iOS 15 ou mais novo. VoiceOver. Precisa ser assinado para instalar (veja o LEIA-ME). |
-| Windows / Android | — | Distribuídos à parte. |
+| Android | — | Distribuído à parte. |
 
 Cada Release traz o hash **SHA-256** de cada arquivo. Só são oficiais os arquivos publicados ali.
 
@@ -44,7 +45,7 @@ Com Apple ID gratuito a assinatura vale **7 dias**; depois é só repetir o pass
 
 ## Atualização automática
 
-A versão de Mac confere ao abrir se há uma Release nova aqui. Se houver, pergunta se você quer baixar e instalar — respondendo *Sim*, ela baixa, instala e reabre sozinha.
+As versões de Windows e Mac conferem ao abrir se há uma Release nova aqui. Se houver, perguntam se você quer baixar e instalar — respondendo *Sim*, baixam, instalam e reabrem sozinhas, mantendo as suas configurações.
 
 ## Contato
 
