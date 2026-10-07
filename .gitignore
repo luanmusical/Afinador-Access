@@ -1,0 +1,11 @@
+# Este repositório é público, mas distribui só os programas já compilados e os manuais
+# (aba Releases). O código-fonte fica no repositório privado Afinador-Access-src.
+*.py
+*.swift
+*.kt
+*.kts
+*.cpp
+*.h
+*.zip
+*.ipa
+build/

@@ -1,0 +1,47 @@
+# Compila as versões Apple do Afinador-Access nas máquinas Mac do GitHub (grátis em repositório público).
+# O código-fonte NÃO fica aqui: ele é baixado do repositório privado Afinador-Access-src com uma chave
+# somente-leitura (segredo SRC_DEPLOY_KEY). Este arquivo só diz COMO compilar.
+#
+# Rodar: aba Actions > "Compilar versões Apple" > Run workflow.
+#   - versao: número da versão (ex.: 1.0.1). É ele que os programas comparam pra saber se há atualização.
+#   - publicar: marcado = cria a Release v<versao> com os pacotes (os programas já instalados passam a
+#     oferecer a atualização). Desmarcado = só compila e deixa os pacotes em "Artifacts" pra testar.
+name: Compilar versões Apple
+
+on:
+  workflow_dispatch:
+    inputs:
+      versao:
+        description: "Versão (ex.: 1.0.0)"
+        required: true
+        default: "1.0.0"
+      publicar:
+        description: "Publicar como Release (dispara a atualização automática)?"
+        type: boolean
+        default: false
+      ref:
+        description: "Branch ou commit do código-fonte"
+        default: "main"
+
+permissions:
+  contents: write
+
+jobs:
+  mac:
+    name: Mac (standalone Universal)
+    runs-on: macos-14
+    steps:
+      - name: Código-fonte (repositório privado)
+        uses: actions/checkout@v4
+        with:
+          repository: luanmusical/Afinador-Access-src
+          ref: ${{ inputs.ref }}
+          ssh-key: ${{ secrets.SRC_DEPLOY_KEY }}
+          path: src
+      - name: Compilar
+        run: sh src/apple/Mac/build_mac.sh "${{ inputs.versao }}"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Afinador-Access-Mac-Universal
+          path: src/build/Afinador-Access-Mac-Universal.zip
+          if-no-files-found: error
